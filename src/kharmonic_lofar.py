@@ -82,7 +82,7 @@ optimizer = LBFGSNew(params, history_size=7, max_iter=4, line_search_fn=True,bat
 
 ############################################################
 # Augmented loss function
-def augmented_loss(mu,batches_per_bline,batch_size):
+def augmented_loss(mu,batch_per_bline,batch_size):
  # process each 'batches_per_bline' rows of mu
  # total rows : batches_per_bline x batch_size
  loss=torch.Tensor(torch.zeros(1)).to(mydevice)

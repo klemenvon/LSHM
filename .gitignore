@@ -133,3 +133,12 @@ dmypy.json
 
 # Exclude vscode folders/files
 .vscode/
+
+# Exclude images produced by EvaluateClusters from being included in the repo
+*.png
+
+# Exclude generated CSV
+*.csv
+
+# Except images in 'figures/' - Not sure if this works...
+!figures/*.png

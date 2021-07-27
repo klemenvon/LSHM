@@ -21,90 +21,67 @@ else:
   mydevice=torch.device('cpu')
 
 #torch.manual_seed(69)
-default_batch=30 # no. of baselines per iter, batch size determined by how many patches are created
-num_epochs=40 # total epochs
+default_batch=12 # no. of baselines per iter, batch size determined by how many patches are created
+num_epochs=10 # total epochs
 Niter=40 # how many minibatches are considered for an epoch
+Nadmm=10 # Inner optimization iterations (ADMM)
 save_model=True
-load_model=False
-# enable this to use 1D CNN along time/freq axes
-time_freq_cnn=True
-# to use random affine transforms to augment original data
-# Do not enable this unless you are sure
-transform_data=False
+load_model=True
 
 # scan directory to get valid datasets
 # file names have to match the SAP ids in the sap_list
-file_list,sap_list=get_fileSAP('/home/sarod')
+file_list,sap_list=get_fileSAP('/media/sarod')
 # or ../../drive/My Drive/Colab Notebooks/
 
 L=256 # latent dimension in real space
-Lf=64 # latent dimension in Fourier space
 Lt=32 # latent dimensions in time/frequency axes (1D CNN)
 Kc=10 # clusters
 Khp=4 # order of K harmonic mean 1/|| ||^p norm
-alpha=0.001 # loss+alpha*cluster_loss
-beta=0.001 # loss+beta*cluster_similarity (penalty)
-gamma=0.001 # loss+gamma*augmentation_loss
-
+alpha=1.0 # loss+alpha*cluster_loss
+beta=1.0 # loss+beta*cluster_similarity (penalty)
+gamma=1.0 # loss+gamma*augmentation_loss
+rho=1 # ADMM rho
 
 # patch size of images
 patch_size=128
 
 num_in_channels=4 # real,imag XX,YY
-# for 32x32 patches
-#net=AutoEncoderCNN(latent_dim=L,K=Kc,channels=num_in_channels).to(mydevice)
-# for 64x64 patches
-#net=AutoEncoderCNN1(latent_dim=L,K=Kc,channels=num_in_channels).to(mydevice)
 
 # for 128x128 patches
 net=AutoEncoderCNN2(latent_dim=L,channels=num_in_channels).to(mydevice)
-# fft: real,imag, so increase number of channels
-fnet=AutoEncoderCNN2(latent_dim=Lf,channels=2*num_in_channels).to(mydevice)
-if time_freq_cnn:
-  # 1D autoencoders
-  netT=AutoEncoder1DCNN(latent_dim=Lt,channels=num_in_channels).to(mydevice)
-  netF=AutoEncoder1DCNN(latent_dim=Lt,channels=num_in_channels).to(mydevice)
-  mod=Kmeans(latent_dim=(L+Lf+Lt+Lt),K=Kc,p=Khp).to(mydevice)
-else:
-  mod=Kmeans(latent_dim=(L+Lf),K=Kc,p=Khp).to(mydevice)
+# 1D autoencoders
+netT=AutoEncoder1DCNN(latent_dim=Lt,channels=num_in_channels).to(mydevice)
+netF=AutoEncoder1DCNN(latent_dim=Lt,channels=num_in_channels).to(mydevice)
+# Kharmonic model
+mod=Kmeans(latent_dim=(L+Lt+Lt),K=Kc,p=Khp).to(mydevice)
 
 if load_model:
   checkpoint=torch.load('./net.model',map_location=mydevice)
   net.load_state_dict(checkpoint['model_state_dict'])
   net.train()
-  checkpoint=torch.load('./fnet.model',map_location=mydevice)
-  fnet.load_state_dict(checkpoint['model_state_dict'])
-  fnet.train()
   checkpoint=torch.load('./khm.model',map_location=mydevice)
   mod.load_state_dict(checkpoint['model_state_dict'])
   mod.train()
-  if time_freq_cnn:
-    checkpoint=torch.load('./netT.model',map_location=mydevice)
-    netT.load_state_dict(checkpoint['model_state_dict'])
-    netT.train()
-    checkpoint=torch.load('./netF.model',map_location=mydevice)
-    netF.load_state_dict(checkpoint['model_state_dict'])
-    netF.train()
-
-
-# start with empty parameter list
-params=list()
-# training strategy: first, first two autoencoders; next, last two autoencoders
-# finally, kharmoic model
-params.extend(list(net.parameters()))
-params.extend(list(fnet.parameters()))
-#params.extend(list(mod.parameters()))
-#if time_freq_cnn:
-#  params.extend(list(netT.parameters()))
-#  params.extend(list(netF.parameters()))
+  checkpoint=torch.load('./netT.model',map_location=mydevice)
+  netT.load_state_dict(checkpoint['model_state_dict'])
+  netT.train()
+  checkpoint=torch.load('./netF.model',map_location=mydevice)
+  netF.load_state_dict(checkpoint['model_state_dict'])
+  netF.train()
 
 
 import torch.optim as optim
 from lbfgsnew import LBFGSNew # custom optimizer
 criterion=nn.MSELoss(reduction='sum')
-#optimizer=optim.SGD(params, lr=0.001, momentum=0.9)
-optimizer=optim.Adam(params, lr=0.001)
-#optimizer = LBFGSNew(params, history_size=7, max_iter=4, line_search_fn=True,batch_mode=True)
+# start with empty parameter list
+params=list()
+#params.extend(list(net.parameters()))
+#params.extend(list(netT.parameters()))
+#params.extend(list(netF.parameters()))
+params.extend(list(mod.parameters()))
+
+#optimizer=optim.Adam(params, lr=0.001)
+optimizer = LBFGSNew(params, history_size=7, max_iter=4, line_search_fn=True,batch_mode=True)
 
 ############################################################
 # Augmented loss function
@@ -125,136 +102,95 @@ def augmented_loss(mu,batch_per_bline,batch_size):
 ############################################################
 
 
-# Random affine transform to transform data
-if transform_data:
-  mytransform=transforms.RandomAffine(degrees=(-90,90),translate=None,scale=(1,3),shear=0.1,fill=0,interpolation=transforms.InterpolationMode.NEAREST)
-else:
-  mytransform=None
-
 # train network
 for epoch in range(num_epochs):
   for i in range(Niter):
     # get the inputs
-    patchx,patchy,inputs=get_data_minibatch(file_list,sap_list,batch_size=default_batch,patch_size=patch_size,normalize_data=True,num_channels=num_in_channels,transform=mytransform)
+    patchx,patchy,inputs=get_data_minibatch(file_list,sap_list,batch_size=default_batch,patch_size=patch_size,normalize_data=True,num_channels=num_in_channels)
     # wrap them in variable
     x=Variable(inputs).to(mydevice)
     (nbatch,nchan,nx,ny)=inputs.shape 
-    # is trasform_data=None, nbatch = patchx x patchy x default_batch
-    # else, nbatch = 2 x patchx x patchy x default_batch
+    # nbatch = patchx x patchy x default_batch
+    # i.e., one baseline (per polarization, real,imag) will create patchx x patchy batches
+    batch_per_bline=patchx*patchy
 
-    # i.e., one baseline (per polarization, real,imag) will create (2) x patchx x patchy batches
-    if transform_data:
-     batch_per_bline=2*patchx*patchy
-    else:
-     batch_per_bline=patchx*patchy
-    
-    def closure():
+    # Lagrange multipliers
+    y1=torch.zeros(x.numel(),requires_grad=False).to(mydevice)
+    y2=torch.zeros(x.numel(),requires_grad=False).to(mydevice)
+    y3=torch.zeros(x.numel(),requires_grad=False).to(mydevice)
+    for admm in range(Nadmm):
+      def closure():
         if torch.is_grad_enabled():
          optimizer.zero_grad()
-        xhat,mu=net(x)
-        fftx=torch.fft.fftn(x-xhat,dim=(2,3),norm='ortho') # scale 1/sqrt(patch_size^2)
-        # fftshift
-        freal,fimag=torch_fftshift(fftx.real,fftx.imag)
-        y=torch.cat((freal,fimag),1)
-        # clamp high values data
-        y.clamp_(min=-10,max=10)
-        yhat,ymu=fnet(y)
+        x1,mu=net(x)
+        # residual
+        x11=(x-x1)/2
+        # pass through 1D CNN
+        iy1=torch.flatten(x11,start_dim=2,end_dim=3)
+        yyT,yyTmu=netT(iy1)
+        # reshape 1D outputs 
+        x2=yyT.view_as(x11)
 
-        if time_freq_cnn:
-          # form complex tensors for inverse FFT
-          yhatc=torch.complex(yhat[:,0:4],yhat[:,4:8])
-          yc=torch.complex(freal,fimag)
-          yerror=torch.fft.ifftshift(yc-yhatc,dim=(2,3))
-          # get IFFT
-          iffty=torch.fft.ifftn(yerror,dim=(2,3),norm='ortho') # scale 1/sqrt(patch_size^2)
-          # get real part only
-          iy=torch.real(iffty)
-          # vectorize 2D time freq axes into a vector
-          iy1=torch.flatten(iy,start_dim=2,end_dim=3)
-          iy2=torch.flatten(torch.transpose(iy,2,3),start_dim=2,end_dim=3)
+        iy2=torch.flatten(torch.transpose(x11,2,3),start_dim=2,end_dim=3)
+        yyF,yyFmu=netF(iy2)
+        # reshape 1D outputs 
+        x3=torch.transpose(yyF.view_as(x11),2,3)
 
-          # pass through 1D CNN
-          yyT,yyTmu=netT(iy1)
-          yyF,yyFmu=netF(iy2)
-
+        # full reconstruction
+        xrecon=x1+x2+x3
  
         # normalize all losses by number of dimensions of the tensor input
-        loss1=(criterion(xhat,x))/(x.numel())
-        loss2=(criterion(yhat,y))/(y.numel()/2) # 1/2 because x2 channels
-        if time_freq_cnn:
-          Mu=torch.cat((mu,ymu,yyTmu,yyFmu),1)
-        else:
-          Mu=torch.cat((mu,ymu),1)
+        # total reconstruction loss
+        loss0=(criterion(xrecon,x))/(x.numel())
+        # individual losses for each AE
+        loss1=(torch.dot(y1,(x-x1).view(-1))+rho/2*criterion(x,x1))/(x.numel())
+        loss2=(torch.dot(y2,(x11-x2).view(-1))+rho/2*criterion(x11,x2))/(x.numel())
+        loss3=(torch.dot(y3,(x11-x3).view(-1))+rho/2*criterion(x11,x3))/(x.numel())
+        Mu=torch.cat((mu,yyTmu,yyFmu),1)
 
         kdist=alpha*mod.clustering_error(Mu)
         clus_sim=beta*mod.cluster_similarity()
         augmentation_loss=gamma*augmented_loss(Mu,batch_per_bline,default_batch)
-        loss=loss1+loss2+kdist+augmentation_loss+clus_sim
-
-        if time_freq_cnn:
-          lossT=(criterion(iy1,yyT))/(iy1.numel())
-          lossF=(criterion(iy2,yyF))/(iy2.numel())
-          loss+=lossT+lossF
+        loss=loss0+loss1+loss2+loss3+kdist+augmentation_loss+clus_sim
 
         if loss.requires_grad:
-          loss.backward()
-          if time_freq_cnn:
-            print('%d %d %f %f %f %f %f %f %f'%(epoch,i,loss1.data.item(),loss2.data.item(),lossT.data.item(),lossF.data.item(),kdist.data.item(),augmentation_loss.data.item(),clus_sim.data.item()))
-          else:
-            print('%d %d %f %f %f %f %f'%(epoch,i,loss1.data.item(),loss2.data.item(),kdist.data.item(),augmentation_loss.data.item(),clus_sim.data.item()))
+          loss.backward(retain_graph=True)
+          # output line contains:
+          # epoch batch admm total_loss loss_AE1 loss_AE2 loss_AE3 loss_KHarmonic loss_augmentation loss_similarity
+          print('%d %d %d %f %f %f %f %f %f %f'%(epoch,i,admm,loss0.data.item(),loss1.data.item(),loss2.data.item(),loss3.data.item(),kdist.data.item(),augmentation_loss.data.item(),clus_sim.data.item()))
         return loss
 
-    # local method for offline update of clustering
-    def update_clustering():
+      #update parameters
+      optimizer.step(closure)
+      # update Lagrange multipliers
       with torch.no_grad():
-        xhat,mu=net(x)
-        fftx=torch.fft.fftn(x-xhat,dim=(2,3),norm='ortho')
-        freal,fimag=torch_fftshift(fftx.real,fftx.imag)
-        y=torch.cat((freal,fimag),1)
-        yhat,ymu=fnet(y)
-        if time_freq_cnn:
-          yhatc=torch.complex(yhat[:,0:4],yhat[:,4:8])
-          yc=torch.complex(freal,fimag)
-          yerror=torch.fft.ifftshift(yc-yhatc,dim=(2,3))
-          iffty=torch.fft.ifftn(yerror,dim=(2,3),norm='ortho') # scale 1/sqrt(patch_size^2)
-          iy=torch.real(iffty)
-          iy1=torch.flatten(iy,start_dim=2,end_dim=3)
-          iy2=torch.flatten(torch.transpose(iy,2,3),start_dim=2,end_dim=3)
-          yyT,yyTmu=netT(iy1)
-          yyF,yyFmu=netF(iy2)
-          Mu=torch.cat((mu,ymu,yyTmu,yyFmu),1)
-        else:
-          Mu=torch.cat((mu,ymu),1)
-        err1=(mod.clustering_error(Mu).data.item())
-        mod.offline_update(Mu)
-        err2=(mod.clustering_error(Mu).data.item())
-        print('%e %e'%(err1,err2))
-        if time_freq_cnn:
-           del yhatc,yc,yerror,iffty,iy,iy1,iy2,yyT,yyF,yyTmu,yyFmu
-        del xhat,mu,fftx,y,yhat,ymu,Mu
+        x1,_=net(x)
+        x11=(x-x1)/2
+        iy1=torch.flatten(x11,start_dim=2,end_dim=3)
+        yyT,_=netT(iy1)
+        # reshape 1D outputs 
+        x2=yyT.view_as(x11)
 
-    #update()
-    optimizer.step(closure)
-    #print('iter %d/%d loss %f'%(epoch,i,closure().data.item()))
+        iy2=torch.flatten(torch.transpose(x11,2,3),start_dim=2,end_dim=3)
+        yyF,_=netF(iy2)
+        # reshape 1D outputs 
+        x3=torch.transpose(yyF.view_as(x11),2,3)
 
-
-
-
+        y1=y1+rho*(x-x1).view(-1)
+        y2=y2+rho*(x11-x2).view(-1)
+        y3=y3+rho*(x11-x3).view(-1)
+        #print("%d %f %f %f"%(admm,torch.norm(y1),torch.norm(y2),torch.norm(y3)))
 
 if save_model:
   torch.save({
     'model_state_dict':net.state_dict()
   },'net.model')
   torch.save({
-    'model_state_dict':fnet.state_dict()
-  },'fnet.model')
-  torch.save({
     'model_state_dict':mod.state_dict()
   },'khm.model')
-  if time_freq_cnn:
-    torch.save({
+  torch.save({
       'model_state_dict':netT.state_dict()
-    },'netT.model')
-    torch.save({
+  },'netT.model')
+  torch.save({
       'model_state_dict':netF.state_dict()
-    },'netF.model')
+  },'netF.model')

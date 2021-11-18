@@ -427,7 +427,7 @@ def get_metadata(filename,SAP,give_baseline=False):
  
 
 ########################################################
-def get_fileSAP(pathname,pattern='L*.MS_extract.h5'):
+def get_fileSAP(pathname,pattern='L*.MS_extract.h5',exclude=None):
   # search in pathname for files matching 'pattern'
   # test valid SAPs in each file and
   # return file_list,sap_list for valid files and their SAPs
@@ -438,6 +438,8 @@ def get_fileSAP(pathname,pattern='L*.MS_extract.h5'):
   else:
     rawlist=glob.glob(pathname+os.sep+pattern)
   # open each file and check valid saps
+  if exclude:
+    rawlist = [f for f in rawlist if exclude not in f]
   for filename in rawlist:
     f=h5py.File(filename,'r')
     g=f['measurement']['saps']

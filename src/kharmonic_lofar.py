@@ -7,12 +7,36 @@ import torchvision.transforms as transforms
 import numpy as np
 import h5py
 import torch.fft
+from datetime import datetime
+import logging
+import sys
+import time
+# For Saving loss to DB
+import sqlite3
+from sqlite3 import Error
 
 # Note: use_cuda=True is set in lofar_tools.py, so make sure to change it
 # if you change it in this script as well
 from lofar_tools import *
 from lofar_models import *
 # Train autoencoder and k-harmonic mean clustering using LOFAR data
+
+# Some pre-amble variables
+datestring = datetime.today().strftime('%Y-%m-%d-%H.%M.%S')
+loss_db = f"loss_{datestring}.db"
+logfile = f"log_{datestring}.log"
+
+# Set up log
+logging.basicConfig(
+	level=logging.DEBUG,
+	format='%(asctime)s %(levelname)-8s %(message)s',
+	datefmt='%Y-%m-%d %H:%M:%S',
+	handlers=[
+		logging.FileHandler(logfile),
+		logging.StreamHandler(sys.stdout)    # Specifically using log to avoid output on PG as that's buffered
+	]
+)
+log = logging.getLogger()
 
 # (try to) use a GPU for computation?
 use_cuda=True
@@ -21,21 +45,25 @@ if use_cuda and torch.cuda.is_available():
 else:
   mydevice=torch.device('cpu')
 
+# Temporary hold-in value
+total_bl = 406870 # Total number of useable baselines
+
 #torch.manual_seed(69)
-default_batch=12 # no. of baselines per iter, batch size determined by how many patches are created
-num_epochs=5 # total epochs
-Niter=80 # how many minibatches are considered for an epoch
+default_batch=96 # no. of baselines per iter, batch size determined by how many patches are created
+num_epochs=10 # total epochs
+Niter=int(total_bl/default_batch) # how many minibatches are considered for an epoch
 Nadmm=10 # Inner optimization iterations (ADMM)
 save_model=True
 load_model=False
 
 # scan directory to get valid datasets
 # file names have to match the SAP ids in the sap_list
-file_list,sap_list=get_fileSAP('/media/sarod')
+#file_list,sap_list=get_fileSAP('/media/sarod')
+file_list,sap_list=get_fileSAP('C:\\LOFAR\\')
 # or ../../drive/My Drive/Colab Notebooks/
 
-L=256-32#256 # latent dimension in real space
 Lt=16#32 # latent dimensions in time/frequency axes (1D CNN)
+L=256-(2*Lt)#256 # latent dimension in real space
 Kc=10 # K-harmonic clusters
 Khp=4 # order of K harmonic mean 1/|| ||^p norm
 alpha=0.01 # loss+alpha*cluster_loss
@@ -78,6 +106,32 @@ if load_model:
   netF.load_state_dict(checkpoint['model_state_dict'])
   netF.train()
 
+# Set up loss database connection
+db_items = [
+  'epoch INTEGER',
+  'iter INTEGER',
+  'admm INTEGER',
+  'loss0 FLOAT',
+  'loss1 FLOAT',
+  'loss2 FLOAT',
+  'loss3 FLOAT',
+  'kdist FLOAT',
+  'augLoss FLOAT',
+  'clusLoss FLOAT',
+]
+
+if use_rica:
+  db_items.append('rica FLOAT')
+
+try:
+  conn = sqlite3.connect(loss_db)
+  cur = conn.cursor()
+  sql = f"create table if not exists lossTable ({(',').join(db_items)})"
+  cur.execute(sql)
+  conn.commit()
+except Error as e:
+  log.error(e)
+
 
 import torch.optim as optim
 from lbfgsnew import LBFGSNew # custom optimizer
@@ -114,6 +168,7 @@ def augmented_loss(mu,batch_per_bline,batch_size):
 # train network
 for epoch in range(num_epochs):
   for i in range(Niter):
+    tic=time.perf_counter()
     # get the inputs
     patchx,patchy,inputs,uvcoords=get_data_minibatch(file_list,sap_list,batch_size=default_batch,patch_size=patch_size,normalize_data=True,num_channels=num_in_channels,uvdist=True)
     # wrap them in variable
@@ -123,6 +178,9 @@ for epoch in range(num_epochs):
     # nbatch = patchx x patchy x default_batch
     # i.e., one baseline (per polarization, real,imag) will create patchx x patchy batches
     batch_per_bline=patchx*patchy
+
+    # List of loss tuples for the last batch of ADMM iterations
+    loss_tuples = []
 
     # Lagrange multipliers
     y1=torch.zeros(x.numel(),requires_grad=False).to(mydevice)
@@ -176,9 +234,11 @@ for epoch in range(num_epochs):
           # each output line contains:
           # epoch batch admm total_loss loss_AE1 loss_AE2 loss_AE3 loss_KHarmonic loss_augmentation loss_similarity loss_rica
           if use_rica:
-            print('%d %d %d %f %f %f %f %f %f %f %f'%(epoch,i,admm,loss0.data.item(),loss1.data.item(),loss2.data.item(),loss3.data.item(),kdist.data.item(),augmentation_loss.data.item(),clus_sim.data.item(),rica_loss.data.item()))
+            loss_tuple = (epoch,i,admm,loss0.data.item(),loss1.data.item(),loss2.data.item(),loss3.data.item(),kdist.data.item(),augmentation_loss.data.item(),clus_sim.data.item(),rica_loss.data.item())
           else:
-            print('%d %d %d %f %f %f %f %f %f %f'%(epoch,i,admm,loss0.data.item(),loss1.data.item(),loss2.data.item(),loss3.data.item(),kdist.data.item(),augmentation_loss.data.item(),clus_sim.data.item()))
+            loss_tuple = (epoch,i,admm,loss0.data.item(),loss1.data.item(),loss2.data.item(),loss3.data.item(),kdist.data.item(),augmentation_loss.data.item(),clus_sim.data.item())
+          log.info(' '.join([str(l) for l in loss_tuple]))  # Log tuple
+          loss_tuples.append(loss_tuple)  # Add to collection (we only send to DB every iteration)
         return loss
 
       #update parameters
@@ -201,6 +261,12 @@ for epoch in range(num_epochs):
         y2=y2+rho*(x11-x2).view(-1)
         y3=y3+rho*(x11-x3).view(-1)
         #print("%d %f %f %f"%(admm,torch.norm(y1),torch.norm(y2),torch.norm(y3)))
+    # Record last set of ADMM interations in the loss DB
+    sql = f"INSERT INTO lossTable VALUES({','.join(['?']*len(db_items))});"
+    cur.executemany(sql,loss_tuples)
+    conn.commit()
+    toc=time.perf_counter()
+    log.info(f"Iteration {i} took {toc-tic:0.4f} seconds.")
   
   # free unused memory
   if use_cuda:

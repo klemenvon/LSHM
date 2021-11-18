@@ -142,3 +142,7 @@ dmypy.json
 
 # Except images in 'figures/' - Not sure if this works...
 !figures/*.png
+
+# Exclude logs and databases
+*.log
+*.db

@@ -8,6 +8,9 @@ import numpy as np
 import h5py
 import glob
 import os,math
+import logging
+
+log = logging.getLogger()
 
 # This file contains various routines used in reading LOFAR H5 data
 
@@ -440,6 +443,12 @@ def get_fileSAP(pathname,pattern='L*.MS_extract.h5',exclude=None):
   # open each file and check valid saps
   if exclude:
     rawlist = [f for f in rawlist if exclude not in f]
+  # We need to check for duplicates
+  nodup = {}
+  for f in rawlist:
+    nodup[f[-21:]] = f
+  rawlist = [v for _,v in nodup.items()]
+  # Get meta and see if useful
   for filename in rawlist:
     f=h5py.File(filename,'r')
     g=f['measurement']['saps']
@@ -457,10 +466,42 @@ def get_fileSAP(pathname,pattern='L*.MS_extract.h5',exclude=None):
          sap_list.append(SAP)
          fileused=True
       except:
-       print('Failed opening'+filename)
+       log.error('Failed opening'+filename)
     
     if not fileused:
-      print('File '+filename+' not used') 
+      log.info('File '+filename+' not used') 
 
   return file_list,sap_list
+########################################################
+
+def get_dataset_map(base_path, exclude=None):
+  """
+  Maps the dataset so that we know exactly how much data we're working with
+  and how to find it.
+  :param str base_path: Folder where to look for all the data
+  :param str exclude: Folders or sub-paths to exclude from the search
+  :return total_list : list (sas_id,sap,baseline), file_map : { sas_id : file_path }
+  """
+  file_list,sap_list = get_fileSAP(base_path,exclude=exclude)
+  total_list = []
+  file_map = {}
+  rev_map = {}
+
+  unique_files = list(set(file_list))
+
+  # Map sas_ids and file paths
+  for f in unique_files:
+    # Read h5 file, extract sas_id and then use that as a key for the map
+    sas = h5py.File(f,'r')['measurement/sas_id'][0]
+    file_map[sas] = f
+    rev_map[f] = sas
+  
+  for f,s in zip(file_list,sap_list):
+    nbase,_,_,_,_ = get_metadata(f,s)
+    # Creates a list of tuples of (sas_id,sap,)
+    bl_list = [(a,s,b) for a,s,b in zip([rev_map[f]]*nbase,[s]*nbase,range(nbase))]
+    total_list += bl_list
+  
+  return total_list, file_map
+
 ########################################################

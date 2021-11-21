@@ -19,6 +19,7 @@ from sqlite3 import Error
 # if you change it in this script as well
 from lofar_tools import *
 from lofar_models import *
+from lofar_tools import mydevice
 # Train autoencoder and k-harmonic mean clustering using LOFAR data
 
 # Some pre-amble variables
@@ -39,11 +40,11 @@ logging.basicConfig(
 log = logging.getLogger()
 
 # (try to) use a GPU for computation?
-use_cuda=True
-if use_cuda and torch.cuda.is_available():
-  mydevice=torch.device('cuda')
-else:
-  mydevice=torch.device('cpu')
+#use_cuda=True
+#if use_cuda and torch.cuda.is_available():
+#  mydevice=torch.device('cuda')
+#else:
+#  mydevice=torch.device('cpu')
 
 # Temporary hold-in value
 total_bl = 406870 # Total number of useable baselines

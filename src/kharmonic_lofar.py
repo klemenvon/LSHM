@@ -29,13 +29,13 @@ logfile = f"log_{datestring}.log"
 
 # Set up log
 logging.basicConfig(
-	level=logging.DEBUG,
-	format='%(asctime)s %(levelname)-8s %(message)s',
-	datefmt='%Y-%m-%d %H:%M:%S',
-	handlers=[
-		logging.FileHandler(logfile),
-		logging.StreamHandler(sys.stdout)    # Specifically using log to avoid output on PG as that's buffered
-	]
+  level=logging.DEBUG,
+  format='%(asctime)s %(levelname)-8s %(message)s',
+  datefmt='%Y-%m-%d %H:%M:%S',
+  handlers=[
+    logging.FileHandler(logfile),
+    logging.StreamHandler(sys.stdout)    # Specifically using log to avoid output on PG as that's buffered
+  ]
 )
 log = logging.getLogger()
 

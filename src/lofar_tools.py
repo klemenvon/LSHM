@@ -469,7 +469,8 @@ def get_fileSAP(pathname,pattern='L*.MS_extract.h5',exclude=None):
        log.error('Failed opening'+filename)
     
     if not fileused:
-      log.info('File '+filename+' not used') 
+      # To avoid this being printed every time
+      log.debug('File '+filename+' not used') 
 
   return file_list,sap_list
 ########################################################

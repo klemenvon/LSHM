@@ -430,7 +430,7 @@ def get_metadata(filename,SAP,give_baseline=False):
  
 
 ########################################################
-def get_fileSAP(pathname,pattern='L*.MS_extract.h5',exclude=None):
+def get_fileSAP(pathname,pattern='L*.MS_extract.h5',exclude=None,include=None):
   # search in pathname for files matching 'pattern'
   # test valid SAPs in each file and
   # return file_list,sap_list for valid files and their SAPs
@@ -442,7 +442,11 @@ def get_fileSAP(pathname,pattern='L*.MS_extract.h5',exclude=None):
     rawlist=glob.glob(pathname+os.sep+pattern)
   # open each file and check valid saps
   if exclude:
+    # Filter for excluded strings
     rawlist = [f for f in rawlist if exclude not in f]
+  if include:
+    # Filter for included strings
+    rawlist = [f for f in rawlist if include in f]
   # We need to check for duplicates
   nodup = {}
   for f in rawlist:
@@ -450,6 +454,7 @@ def get_fileSAP(pathname,pattern='L*.MS_extract.h5',exclude=None):
   rawlist = [v for _,v in nodup.items()]
   # Get meta and see if useful
   for filename in rawlist:
+    log.debug(f"[get_fileSAP] Processing file {filename}.")
     f=h5py.File(filename,'r')
     g=f['measurement']['saps']
     SAPs=[SAP for SAP in g]
@@ -475,7 +480,7 @@ def get_fileSAP(pathname,pattern='L*.MS_extract.h5',exclude=None):
   return file_list,sap_list
 ########################################################
 
-def get_dataset_map(base_path, exclude=None):
+def get_dataset_map(base_path, exclude=None,include=None):
   """
   Maps the dataset so that we know exactly how much data we're working with
   and how to find it.
@@ -483,7 +488,7 @@ def get_dataset_map(base_path, exclude=None):
   :param str exclude: Folders or sub-paths to exclude from the search
   :return total_list : list (sas_id,sap,baseline), file_map : { sas_id : file_path }
   """
-  file_list,sap_list = get_fileSAP(base_path,exclude=exclude)
+  file_list,sap_list = get_fileSAP(base_path,exclude=exclude,include=include)
   total_list = []
   file_map = {}
   rev_map = {}

@@ -2,6 +2,10 @@ import torch
 from functools import reduce
 from torch.optim.optimizer import Optimizer
 
+# For debugging purposes
+import logging
+log = logging.getLogger()
+
 import math
 
 be_verbose=False
@@ -562,6 +566,7 @@ class LBFGSNew(Optimizer):
         # optimize for a max of max_iter iterations
         grad_nrm=flat_grad.norm().item()
         while n_iter < max_iter and not math.isnan(grad_nrm):
+            log.debug('hello from the optimizer!')
             # keep track of nb of iterations
             n_iter += 1
             state['n_iter'] += 1

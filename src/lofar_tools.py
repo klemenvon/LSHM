@@ -352,7 +352,7 @@ def get_data_for_baseline(filename,SAP,baseline_id,patch_size=32,num_channels=8,
       return baselines[mybase],patchx,patchy,y
 
 ########################################################
-def get_data_for_baseline_flat(filename,SAP,baseline_id,patch_size=32,num_channels=8):
+def get_data_for_baseline_flat(filename,SAP,baseline_id,num_channels=8,uvdist=False):
   # open LOFAR H5 file, read data from a SAP,
   # return data for given baseline_id
   # Note : 'without unfolding' 
@@ -401,12 +401,47 @@ def get_data_for_baseline_flat(filename,SAP,baseline_id,patch_size=32,num_channe
     x[0,3]=torch.from_numpy(g[mybase,:,:,ci,1])
     x[0,3]=x[0,3]*scalefac
 
+  if uvdist:
+    # light speed
+    c=2.99792458e8
+    # observation start time
+    hms=f['measurement']['info']['start_time'][0].decode('ascii').split()[1].split(sep=':')
+    # time in hours, in [0,24]
+    start_time=float(hms[0])+float(hms[1])/60.0+float(hms[2])/3600
+    # convert to radians
+    theta=start_time/24.0*(2*math.pi)
+    # frequencies in Hz
+    frq=f['measurement']['saps'][SAP]['central_frequencies']
+    Nf0=frq.shape[0]//2
+    # central frequency
+    freq0=frq[Nf0]
+    # 1/lambda=freq0/c
+    inv_lambda=freq0/c
+    # rotation matrix =[cos(theta) sin(theta); -sin(theta) cos(theta)]
+    rot00=math.cos(theta)*inv_lambda
+    rot01=math.sin(theta)*inv_lambda
+
+    baselines=f['measurement']['saps'][SAP]['baselines']
+    xyz=f['measurement']['saps'][SAP]['antenna_locations']['XYZ']
+    uv=torch.zeros(1,2).to(mydevice,non_blocking=True)
+
+    # get u,v coordinates for this baseline
+    # convert xx,yy to wavelengths and rotate by theta
+    xx=xyz[baselines[mybase][0]][0]-xyz[baselines[mybase][1]][0]
+    yy=xyz[baselines[mybase][0]][1]-xyz[baselines[mybase][1]][1]
+    uu=xx*rot00+yy*rot01
+    vv=-xx*rot01+yy*rot00
+    uv[0,0]=uu
+    uv[0,1]=vv
 
   # do some rough cleanup of data
   ##y[y!=y]=0 # set NaN,Inf to zero
   x.clamp_(-1e6,1e6) # clip high values
 
-  return x
+  if uvdist:
+    return x,uv
+  else:
+    return x
 
 
 ########################################################

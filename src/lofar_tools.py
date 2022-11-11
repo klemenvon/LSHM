@@ -214,7 +214,7 @@ def get_data_minibatch(file_list,SAP_list,batch_size=2,patch_size=32,normalize_d
     return patchx,patchy,y
 
 ########################################################
-def get_data_for_baseline(filename,SAP,baseline_id,patch_size=32,num_channels=8,give_baseline=False,uvdist=False):
+def get_data_for_baseline(filename,SAP,baseline_id,patch_size=32,num_channels=8,give_baseline=False,uvdist=False,device=None):
   # open LOFAR H5 file, read data from a SAP,
   # return data for given baseline_id
   # num_channels=4 real,imag XX and YY
@@ -222,6 +222,8 @@ def get_data_for_baseline(filename,SAP,baseline_id,patch_size=32,num_channels=8,
   # if give_basline=True, also return tuple [station1,station2] of the selected baseline
   # if uvdist=True, return u,v distance in wavelengths (per each patch)
   # average value for the central frequency and start time of observation
+  if not device:
+    device = mydevice
 
   # light speed
   c=2.99792458e8
@@ -262,7 +264,7 @@ def get_data_for_baseline(filename,SAP,baseline_id,patch_size=32,num_channels=8,
 
     baselines=f['measurement']['saps'][SAP]['baselines']
     xyz=f['measurement']['saps'][SAP]['antenna_locations']['XYZ']
-    uv=torch.zeros(1,2).to(mydevice,non_blocking=True)
+    uv=torch.zeros(1,2).to(device,non_blocking=True)
 
   # this is 8 channels in torch tensor
   if num_channels==8:
@@ -308,11 +310,11 @@ def get_data_for_baseline(filename,SAP,baseline_id,patch_size=32,num_channels=8,
   # get new shape
   (nbase1,nchan1,patchx,patchy,nx,ny)=y.shape
   # create a new tensor
-  y1=torch.zeros([nbase1*patchx*patchy,nchan1,nx,ny]).to(mydevice,non_blocking=True)
+  y1=torch.zeros([nbase1*patchx*patchy,nchan1,nx,ny]).to(device,non_blocking=True)
 
   if uvdist:
     # create a tensor for uv coordinates to match size of y1
-    uv1=torch.zeros([nbase1*patchx*patchy,2]).to(mydevice,non_blocking=True)
+    uv1=torch.zeros([nbase1*patchx*patchy,2]).to(device,non_blocking=True)
 
   # copy data ordered according to the patches
   ck=0
@@ -352,13 +354,15 @@ def get_data_for_baseline(filename,SAP,baseline_id,patch_size=32,num_channels=8,
       return baselines[mybase],patchx,patchy,y
 
 ########################################################
-def get_data_for_baseline_flat(filename,SAP,baseline_id,num_channels=8,uvdist=False):
+def get_data_for_baseline_flat(filename,SAP,baseline_id,num_channels=8,uvdist=False,device=None):
   # open LOFAR H5 file, read data from a SAP,
   # return data for given baseline_id
   # Note : 'without unfolding' 
   # num_channels=4 real,imag XX and YY
   # num_channels=8 real,imag XX, XY, YX and YY 
   assert(num_channels==4 or num_channels==8)
+  if not device:
+    device = mydevice
 
   f=h5py.File(filename,'r')
   # select a dataset SAP (int8)
@@ -369,7 +373,7 @@ def get_data_for_baseline_flat(filename,SAP,baseline_id,num_channels=8,uvdist=Fa
   (nbase,ntime,nfreq,npol,ncomplex)=g.shape
   # h shape : nbase, nfreq, npol
 
-  x=torch.zeros(1,num_channels,ntime,nfreq).to(mydevice,non_blocking=True)
+  x=torch.zeros(1,num_channels,ntime,nfreq).to(device,non_blocking=True)
   
   mybase=baseline_id
   if num_channels==8:
@@ -423,7 +427,7 @@ def get_data_for_baseline_flat(filename,SAP,baseline_id,num_channels=8,uvdist=Fa
 
     baselines=f['measurement']['saps'][SAP]['baselines']
     xyz=f['measurement']['saps'][SAP]['antenna_locations']['XYZ']
-    uv=torch.zeros(1,2).to(mydevice,non_blocking=True)
+    uv=torch.zeros(1,2).to(device,non_blocking=True)
 
     # get u,v coordinates for this baseline
     # convert xx,yy to wavelengths and rotate by theta

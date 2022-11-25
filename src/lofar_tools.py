@@ -373,7 +373,7 @@ def get_data_for_baseline_flat(filename,SAP,baseline_id,num_channels=8,uvdist=Fa
   (nbase,ntime,nfreq,npol,ncomplex)=g.shape
   # h shape : nbase, nfreq, npol
 
-  x=torch.zeros(1,num_channels,ntime,nfreq).to(device,non_blocking=True)
+  x=torch.zeros(1,num_channels,ntime,nfreq)
   
   mybase=baseline_id
   if num_channels==8:
@@ -441,6 +441,7 @@ def get_data_for_baseline_flat(filename,SAP,baseline_id,num_channels=8,uvdist=Fa
   # do some rough cleanup of data
   ##y[y!=y]=0 # set NaN,Inf to zero
   x.clamp_(-1e6,1e6) # clip high values
+  x.to(device,non_blocking=True)
 
   if uvdist:
     return x,uv

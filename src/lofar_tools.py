@@ -548,7 +548,10 @@ def get_dataset_map(base_path, exclude=None,include=None):
     # Creates a list of tuples of (sas_id,sap,)
     bl_list = [(a,s,b) for a,s,b in zip([rev_map[f]]*nbase,[s]*nbase,range(nbase))]
     total_list += bl_list
+  len_before = len(total_list)
   total_list = list(set(total_list))
+  len_after = len(total_list)
+  log.debug(f"Removed {len_before-len_after} duplicate mapping entries.")
   
   return total_list, file_map
 

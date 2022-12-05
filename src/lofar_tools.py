@@ -532,6 +532,7 @@ def get_dataset_map(base_path, exclude=None,include=None):
   total_list = []
   file_map = {}
   rev_map = {}
+  sas_processed = []
 
   unique_files = list(set(file_list))
 
@@ -547,6 +548,7 @@ def get_dataset_map(base_path, exclude=None,include=None):
     # Creates a list of tuples of (sas_id,sap,)
     bl_list = [(a,s,b) for a,s,b in zip([rev_map[f]]*nbase,[s]*nbase,range(nbase))]
     total_list += bl_list
+  total_list = list(set(total_list))
   
   return total_list, file_map
 

@@ -108,8 +108,8 @@ class AutoEncoderCNN2(nn.Module):
           self.inner_shape[0] = -1
           self.inner_shape = tuple(self.inner_shape)
           # Sanity debug to see that the calculated dimensions match observed
-          log.debug(f"Shape of inner tensor {self.inner_shape}")
-          log.debug(f"Calculated (w,h) of inner: {self.in_shape}")
+          #log.debug(f"Shape of inner tensor {self.inner_shape}")
+          #log.debug(f"Calculated (w,h) of inner: {self.in_shape}")
         x=torch.flatten(x,start_dim=1) # 1,192*2*2=768
         uv=F.elu(self.fcuv1(uv))
         # combine uv harmonics
@@ -155,7 +155,7 @@ class AutoEncoder1DCNN(nn.Module):
         self.p = k//2
         if self.k == 4:
           self.p = 1
-        log.debug(f"Padding 1D AE = {self.p}")
+        #log.debug(f"Padding 1D AE = {self.p}")
         assert self.k >= self.s, "Kernel needs to be larger than stride!!"
         self.rica=rica
         self.latent_dim=latent_dim
@@ -245,8 +245,8 @@ class AutoEncoder1DCNN(nn.Module):
           self.inner_shape[0] = -1
           self.inner_shape = tuple(self.inner_shape)
           # Sanity check debug
-          log.debug(f"Shape of inner tensor 1D {self.inner_shape}")
-          log.debug(f"Calculated inner shape 1D {self.in_shape}")
+          #log.debug(f"Shape of inner tensor 1D {self.inner_shape}")
+          #log.debug(f"Calculated inner shape 1D {self.in_shape}")
         x=torch.flatten(x,start_dim=1) # 1,192*2*2=768
         uv=F.elu(self.fcuv1(uv))
         # combine uv harmonics
